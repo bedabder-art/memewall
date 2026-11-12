@@ -488,6 +488,7 @@
 
         document.getElementById('profileBtn').addEventListener('click', () => {
             document.getElementById('usernameInput').value = currentUser.name;
+            document.getElementById('pinInput').value = '';
             profileModal.classList.remove('hidden');
         });
 
@@ -509,6 +510,8 @@
                 currentUser.role = 'owner';
             } else if (pin === '9999') {
                 currentUser.role = 'modo';
+            } else if (pin !== '') {
+                alert("Code PIN incorrect ! Rôle de membre conservé.");
             }
 
             const fileInput = document.getElementById('avatarFileInput');
@@ -680,6 +683,7 @@
                         modToolsHtml = `
                             <div class="mod-tools">
                                 <button class="btn-pin" onclick="togglePin(${post.id})">📌 ${post.pinned ? 'Désépingler' : 'Épingler'}</button>
+                                <button class="btn-mod" onclick="deletePost(${post.id})">Supprimer</button>
                                 <button class="btn-mod" onclick="banUser('${post.token}')">Bannir</button>
                             </div>
                         `;
@@ -749,8 +753,16 @@
             }
         };
 
+        window.deletePost = function(id) {
+            if (confirm("Supprimer cette publication ?")) {
+                posts = posts.filter(item => item.id !== id);
+                saveData();
+                render();
+            }
+        };
+
         window.banUser = function(token) {
-            if (confirm("Voulez-vous vraiment bannir cet appareil et supprimer toutes ses publications ?")) {
+            if (confirm("Bannir cet appareil et supprimer toutes ses publications ?")) {
                 bannedTokens.push(token);
                 posts = posts.filter(p => p.token !== token);
                 saveData();
