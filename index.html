@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
@@ -74,6 +74,8 @@
             text-align: center;
             margin: 12px 16px 0 16px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            width: 100%;
+            max-width: 500px;
         }
 
         .banner h2 {
@@ -92,6 +94,8 @@
             border-radius: 8px;
             padding: 4px;
             margin: 0 16px;
+            width: 100%;
+            max-width: 500px;
         }
 
         nav button {
@@ -166,6 +170,7 @@
             align-items: center;
             justify-content: center;
             font-weight: bold;
+            overflow: hidden;
         }
 
         .user-meta {
@@ -238,11 +243,6 @@
             display: flex;
             align-items: center;
             gap: 6px;
-            transition: background 0.2s;
-        }
-
-        .btn-laugh:hover {
-            background: rgba(255,255,255,0.1);
         }
 
         .mod-tools {
@@ -294,10 +294,6 @@
             outline: none;
         }
 
-        textarea:focus {
-            border-color: var(--accent);
-        }
-
         .form-footer {
             display: flex;
             justify-content: space-between;
@@ -325,11 +321,6 @@
             border-radius: 8px;
             font-weight: 600;
             cursor: pointer;
-            transition: background 0.2s;
-        }
-
-        .btn-primary:hover {
-            background: var(--accent-hover);
         }
 
         .modal {
@@ -358,11 +349,7 @@
             gap: 14px;
         }
 
-        .modal-content h3 {
-            font-size: 1.1rem;
-        }
-
-        .modal-content input {
+        .modal-content input, .modal-content textarea {
             width: 100%;
             background: rgba(0,0,0,0.2);
             border: 1px solid var(--border);
@@ -406,4 +393,378 @@
 
     <!-- Modal Profil -->
     <div id="profileModal" class="modal hidden">
-        <div class="modal-
+        <div class="modal-content">
+            <h3>Configurer votre profil</h3>
+            <input type="text" id="usernameInput" placeholder="Ton pseudo...">
+            <label style="font-size: 0.85rem; color: var(--text-muted);">Avatar personnalisé :</label>
+            <input type="file" id="avatarFileInput" accept="image/*">
+            <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 10px;">
+                <label style="font-size: 0.85rem; color: var(--text-muted);">Code PIN VIP (Optionnel) :</label>
+                <input type="password" id="pinInput" placeholder="1234 Owner / 9999 Modo">
+            </div>
+            <button id="saveProfile" class="btn-primary" style="margin-top: 10px;">Enregistrer</button>
+        </div>
+    </div>
+
+    <!-- Modal Suggestions -->
+    <div id="ideasModal" class="modal hidden">
+        <div class="modal-content">
+            <h3>Envoyer une idée ou suggestion</h3>
+            <textarea id="ideaText" rows="4" placeholder="Dis-nous ce qu'on pourrait améliorer..."></textarea>
+            <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                <button id="closeIdeas" class="btn-laugh">Annuler</button>
+                <button id="sendIdea" class="btn-primary">Envoyer</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let soundEnabled = true;
+        let audioCtx = null;
+
+        function playSound(type) {
+            if (!soundEnabled) return;
+            try {
+                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                let now = audioCtx.currentTime;
+                osc.frequency.setValueAtTime(400, now);
+                osc.frequency.exponentialRampToValueAtTime(800, now + 0.1);
+                gain.gain.setValueAtTime(0.1, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+                osc.start(now);
+                osc.stop(now + 0.1);
+            } catch(e) {}
+        }
+
+        document.getElementById('soundToggle').addEventListener('click', () => {
+            soundEnabled = !soundEnabled;
+            document.getElementById('soundToggle').textContent = soundEnabled ? '🔊' : '🔇';
+        });
+
+        let deviceToken = localStorage.getItem('memewall_token');
+        if (!deviceToken) {
+            deviceToken = 'token_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('memewall_token', deviceToken);
+        }
+
+        let bannedTokens = JSON.parse(localStorage.getItem('memewall_banned') || '[]');
+        if (bannedTokens.includes(deviceToken)) {
+            document.body.innerHTML = '<div style="display:flex;justify-content:center;align-items:center;height:100vh;flex-direction:column;gap:10px;color:white;"><h2>🚫 Accès refusé</h2><p>Votre appareil a été banni de la plateforme.</p></div>';
+        }
+
+        let currentUser = JSON.parse(localStorage.getItem('memewall_user') || JSON.stringify({
+            name: 'Anonyme_' + Math.floor(Math.random()*1000),
+            avatar: '',
+            role: 'member'
+        }));
+
+        let posts = JSON.parse(localStorage.getItem('memewall_posts') || '[]');
+        let ideas = JSON.parse(localStorage.getItem('memewall_ideas') || '[]');
+        let currentTab = 'feed';
+
+        const badWords = ['connard', 'salope', 'pute', 'nique', 'fdp', 'raciste', 'nazi'];
+        function containsHate(text) {
+            const lower = text.toLowerCase();
+            return badWords.some(word => lower.includes(word));
+        }
+
+        function saveData() {
+            localStorage.setItem('memewall_posts', JSON.stringify(posts));
+            localStorage.setItem('memewall_user', JSON.stringify(currentUser));
+            localStorage.setItem('memewall_ideas', JSON.stringify(ideas));
+            localStorage.setItem('memewall_banned', JSON.stringify(bannedTokens));
+        }
+
+        const mainContainer = document.getElementById('mainContainer');
+        const profileModal = document.getElementById('profileModal');
+        const ideasModal = document.getElementById('ideasModal');
+
+        document.getElementById('profileBtn').addEventListener('click', () => {
+            document.getElementById('usernameInput').value = currentUser.name;
+            profileModal.classList.remove('hidden');
+        });
+
+        document.getElementById('ideasBtn').addEventListener('click', () => {
+            ideasModal.classList.remove('hidden');
+        });
+
+        document.getElementById('closeIdeas').addEventListener('click', () => {
+            ideasModal.classList.add('hidden');
+        });
+
+        document.getElementById('saveProfile').addEventListener('click', () => {
+            const name = document.getElementById('usernameInput').value.trim();
+            const pin = document.getElementById('pinInput').value.trim();
+            
+            if (name) currentUser.name = name;
+            
+            if (pin === '1234') {
+                currentUser.role = 'owner';
+            } else if (pin === '9999') {
+                currentUser.role = 'modo';
+            }
+
+            const fileInput = document.getElementById('avatarFileInput');
+            if (fileInput.files && fileInput.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    currentUser.avatar = e.target.result;
+                    saveData();
+                    profileModal.classList.add('hidden');
+                    checkInboxVisibility();
+                    render();
+                };
+                reader.readAsDataURL(fileInput.files[0]);
+            } else {
+                saveData();
+                profileModal.classList.add('hidden');
+                checkInboxVisibility();
+                render();
+            }
+        });
+
+        document.getElementById('sendIdea').addEventListener('click', () => {
+            const text = document.getElementById('ideaText').value.trim();
+            if (text) {
+                if (containsHate(text)) {
+                    alert("Message bloqué par le filtre anti-haine.");
+                    return;
+                }
+                ideas.push({ author: currentUser.name, text, time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) });
+                saveData();
+                document.getElementById('ideaText').value = '';
+                ideasModal.classList.add('hidden');
+                alert("Idée envoyée avec succès !");
+            }
+        });
+
+        document.getElementById('navFeed').addEventListener('click', () => {
+            currentTab = 'feed';
+            document.getElementById('navFeed').classList.add('active');
+            document.getElementById('navChat').classList.remove('active');
+            const navInbox = document.getElementById('navInbox');
+            if (navInbox) navInbox.classList.remove('active');
+            render();
+        });
+
+        document.getElementById('navChat').addEventListener('click', () => {
+            currentTab = 'chat';
+            document.getElementById('navChat').classList.add('active');
+            document.getElementById('navFeed').classList.remove('active');
+            const navInbox = document.getElementById('navInbox');
+            if (navInbox) navInbox.classList.remove('active');
+            render();
+        });
+
+        const navInboxBtn = document.getElementById('navInbox');
+        navInboxBtn.addEventListener('click', () => {
+            currentTab = 'inbox';
+            navInboxBtn.classList.add('active');
+            document.getElementById('navFeed').classList.remove('active');
+            document.getElementById('navChat').classList.remove('active');
+            render();
+        });
+
+        function checkInboxVisibility() {
+            if (currentUser.role === 'owner' || currentUser.role === 'modo') {
+                navInboxBtn.classList.remove('hidden');
+            } else {
+                navInboxBtn.classList.add('hidden');
+            }
+        }
+        checkInboxVisibility();
+
+        function render() {
+            mainContainer.innerHTML = '';
+
+            if (currentTab === 'feed') {
+                const formDiv = document.createElement('div');
+                formDiv.className = 'form-post';
+                formDiv.innerHTML = `
+                    <textarea id="postText" rows="3" placeholder="Exprime-toi ou partage un mème..."></textarea>
+                    <div class="form-footer">
+                        <label class="file-upload-label">
+                            📁 Ajouter image/vidéo
+                            <input type="file" id="postFile" accept="image/*,video/*">
+                        </label>
+                        <button class="btn-primary" id="submitPost">Publier</button>
+                    </div>
+                `;
+                mainContainer.appendChild(formDiv);
+
+                document.getElementById('submitPost').addEventListener('click', () => {
+                    const text = document.getElementById('postText').value.trim();
+                    const fileInput = document.getElementById('postFile');
+                    
+                    if (containsHate(text)) {
+                        alert("Publication bloquée : contenu inapproprié détecté.");
+                        return;
+                    }
+
+                    if (!text && (!fileInput.files || !fileInput.files[0])) return;
+
+                    const handleMedia = (mediaUrl, mediaType) => {
+                        posts.unshift({
+                            id: Date.now(),
+                            token: deviceToken,
+                            author: currentUser.name,
+                            avatar: currentUser.avatar,
+                            role: currentUser.role,
+                            text,
+                            media: mediaUrl,
+                            mediaType,
+                            laughs: 0,
+                            pinned: false,
+                            time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+                        });
+                        playSound('pop');
+                        saveData();
+                        render();
+                    };
+
+                    if (fileInput.files && fileInput.files[0]) {
+                        const reader = new FileReader();
+                        reader.onload = function(e) {
+                            const type = fileInput.files[0].type.startsWith('video') ? 'video' : 'image';
+                            handleMedia(e.target.result, type);
+                        };
+                        reader.readAsDataURL(fileInput.files[0]);
+                    } else {
+                        handleMedia(null, null);
+                    }
+                });
+
+                let bestPostId = null;
+                if (posts.length > 0) {
+                    let maxLaughs = -1;
+                    posts.forEach(p => {
+                        if (p.laughs > maxLaughs) {
+                            maxLaughs = p.laughs;
+                            bestPostId = p.id;
+                        }
+                    });
+                }
+
+                const sortedPosts = [...posts].sort((a, b) => (b.pinned === true) - (a.pinned === true));
+
+                sortedPosts.forEach(post => {
+                    const card = document.createElement('div');
+                    card.className = `card ${post.pinned ? 'pinned' : ''}`;
+
+                    let badgeHtml = '';
+                    if (post.role === 'owner') badgeHtml = '<span class="badge badge-owner">👑 OWNER</span>';
+                    else if (post.role === 'modo') badgeHtml = '<span class="badge badge-modo">🛡️ MODO</span>';
+                    
+                    if (post.id === bestPostId && post.laughs > 0) {
+                        badgeHtml += ' <span class="badge badge-best">🔥 BEST POSTEUR</span>';
+                    }
+
+                    let mediaHtml = '';
+                    if (post.media) {
+                        if (post.mediaType === 'video') {
+                            mediaHtml = `<div class="media-container"><video src="${post.media}" controls></video></div>`;
+                        } else {
+                            mediaHtml = `<div class="media-container"><img src="${post.media}" alt="Meme"></div>`;
+                        }
+                    }
+
+                    let modToolsHtml = '';
+                    if (currentUser.role === 'owner' || currentUser.role === 'modo') {
+                        modToolsHtml = `
+                            <div class="mod-tools">
+                                <button class="btn-pin" onclick="togglePin(${post.id})">📌 ${post.pinned ? 'Désépingler' : 'Épingler'}</button>
+                                <button class="btn-mod" onclick="banUser('${post.token}')">Bannir</button>
+                            </div>
+                        `;
+                    }
+
+                    card.innerHTML = `
+                        ${post.pinned ? '<div class="pin-badge">📌 ÉPINGLÉ PAR LA MODO</div>' : ''}
+                        <div class="user-info">
+                            <div class="avatar">${post.avatar ? `<img src="${post.avatar}" style="width:100%;height:100%;object-fit:cover;">` : post.author[0].toUpperCase()}</div>
+                            <div class="user-meta">
+                                <div class="username">${post.author} ${badgeHtml}</div>
+                                <div class="time">${post.time}</div>
+                            </div>
+                        </div>
+                        ${post.text ? `<div class="content-text">${post.text}</div>` : ''}
+                        ${mediaHtml}
+                        <div class="card-actions">
+                            <button class="btn-laugh" onclick="addLaugh(${post.id})">😆 <span>${post.laughs}</span></button>
+                            ${modToolsHtml}
+                        </div>
+                    `;
+                    mainContainer.appendChild(card);
+                });
+
+            } else if (currentTab === 'chat') {
+                mainContainer.innerHTML = `
+                    <div class="card">
+                        <h3>Salons de discussion (Max 10 pers.)</h3>
+                        <p style="font-size: 0.85rem; color: var(--text-muted);">Espace en cours de construction. Bientôt disponible !</p>
+                    </div>
+                `;
+            } else if (currentTab === 'inbox') {
+                mainContainer.innerHTML = `<h3>📥 Boîte à suggestions</h3>`;
+                if (ideas.length === 0) {
+                    mainContainer.innerHTML += `<p style="color: var(--text-muted); font-size: 0.9rem;">Aucune suggestion pour le moment.</p>`;
+                } else {
+                    ideas.forEach((idea, idx) => {
+                        const c = document.createElement('div');
+                        c.className = 'card';
+                        c.innerHTML = `
+                            <div style="font-size: 0.8rem; color: var(--text-muted);">${idea.author} — ${idea.time}</div>
+                            <div style="font-size: 0.95rem;">${idea.text}</div>
+                            <button class="btn-mod" style="align-self: flex-start;" onclick="deleteIdea(${idx})">Supprimer</button>
+                        `;
+                        mainContainer.appendChild(c);
+                    });
+                }
+            }
+        }
+
+        window.addLaugh = function(id) {
+            const p = posts.find(item => item.id === id);
+            if (p) {
+                p.laughs++;
+                playSound('pop');
+                saveData();
+                render();
+            }
+        };
+
+        window.togglePin = function(id) {
+            const p = posts.find(item => item.id === id);
+            if (p) {
+                p.pinned = !p.pinned;
+                saveData();
+                render();
+            }
+        };
+
+        window.banUser = function(token) {
+            if (confirm("Voulez-vous vraiment bannir cet appareil et supprimer toutes ses publications ?")) {
+                bannedTokens.push(token);
+                posts = posts.filter(p => p.token !== token);
+                saveData();
+                render();
+            }
+        };
+
+        window.deleteIdea = function(idx) {
+            ideas.splice(idx, 1);
+            saveData();
+            render();
+        };
+
+        render();
+    </script>
+</body>
+</html>
